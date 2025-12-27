@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AppState, WorkType } from '../types';
 import { calculateSessionEarnings, exportToCSV, formatCurrency } from '../utils';
 import { 
@@ -6,7 +6,7 @@ import {
   Tooltip, ResponsiveContainer, Line, ComposedChart, 
   PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { Download, TrendingUp, Clock, PieChart as PieIcon } from 'lucide-react';
+import { Download, TrendingUp, Clock, PieChart as PieIcon, ChevronRight, Calendar, DollarSign } from 'lucide-react';
 
 interface ReportsProps {
   state: AppState;
@@ -26,8 +26,8 @@ const PIE_COLORS = [COLORS.primary, COLORS.secondary, COLORS.tertiary, COLORS.qu
 const CustomTooltip = ({ active, payload, label, currency }: any) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-4 border border-gray-100 dark:border-gray-700 shadow-xl rounded-xl animate-fade-in">
-        <p className="font-bold text-gray-700 dark:text-gray-200 mb-2 border-b border-gray-100 dark:border-gray-700 pb-2">
+      <div className="bg-white dark:bg-gray-800 p-4 border border-gray-100 dark:border-gray-700 shadow-xl rounded-xl animate-fade-in z-50">
+        <p className="font-bold text-gray-700 dark:text-gray-200 mb-2 border-b border-gray-100 dark:border-gray-700 pb-2 flex justify-between items-center">
           {label}
         </p>
         {payload.map((entry: any, index: number) => (
@@ -37,12 +37,15 @@ const CustomTooltip = ({ active, payload, label, currency }: any) => {
               {entry.name === 'earnings' ? 'Ganhos' : entry.name === 'hours' ? 'Horas' : entry.name}:
             </span>
             <span className="font-medium text-gray-900 dark:text-white ml-auto">
-              {entry.name === 'earnings' || (entry.dataKey === 'value' && typeof entry.value === 'number' && entry.value > 24) // Heuristic for money vs hours
+              {entry.name === 'earnings' || (entry.dataKey === 'value' && typeof entry.value === 'number' && entry.value > 24) 
                 ? formatCurrency(entry.value, currency)
                 : entry.name === 'hours' ? `${entry.value.toFixed(1)}h` : entry.value}
             </span>
           </div>
         ))}
+        <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 italic text-center">
+          Clique para ver detalhes
+        </div>
       </div>
     );
   }
@@ -50,6 +53,8 @@ const CustomTooltip = ({ active, payload, label, currency }: any) => {
 };
 
 export const Reports: React.FC<ReportsProps> = ({ state }) => {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   // 1. Aggregate Data by Date for cleaner charts
   const aggregatedData = useMemo(() => {
     const map = new Map<string, { date: string, rawDate: number, earnings: number, hours: number }>();
@@ -94,6 +99,14 @@ export const Reports: React.FC<ReportsProps> = ({ state }) => {
     }));
   }, [state.sessions]);
 
+  // 3. Drill-down data
+  const selectedDayDetails = useMemo(() => {
+    if (!selectedDate) return [];
+    return state.sessions.filter(s => 
+      new Date(s.startTime).toLocaleDateString() === selectedDate && s.endTime
+    ).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  }, [selectedDate, state.sessions]);
+
   const handleExport = () => {
     const data = state.sessions.map(s => ({
       Data: new Date(s.startTime).toLocaleDateString(),
@@ -104,6 +117,16 @@ export const Reports: React.FC<ReportsProps> = ({ state }) => {
       Ganho: calculateSessionEarnings(s, state.settings).toFixed(2)
     }));
     exportToCSV('relatorio_completo.csv', data);
+  };
+
+  const handleChartClick = (data: any) => {
+    if (data && data.activePayload && data.activePayload.length) {
+      setSelectedDate(data.activePayload[0].payload.date);
+      // Smooth scroll to details
+      setTimeout(() => {
+        document.getElementById('details-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
   };
 
   if (state.sessions.length === 0) {
@@ -147,7 +170,12 @@ export const Reports: React.FC<ReportsProps> = ({ state }) => {
          
          <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-               <AreaChart data={aggregatedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+               <AreaChart 
+                  data={aggregatedData} 
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  onClick={handleChartClick}
+                  className="cursor-pointer"
+               >
                   <defs>
                     <linearGradient id="colorEarnings" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.3}/>
@@ -198,7 +226,11 @@ export const Reports: React.FC<ReportsProps> = ({ state }) => {
            
            <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                 <ComposedChart data={aggregatedData}>
+                 <ComposedChart 
+                    data={aggregatedData}
+                    onClick={handleChartClick}
+                    className="cursor-pointer"
+                 >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} opacity={0.1} />
                     <XAxis dataKey="date" hide />
                     <YAxis yAxisId="left" orientation="left" stroke="#9ca3af" fontSize={10} axisLine={false} tickLine={false} />
@@ -247,6 +279,59 @@ export const Reports: React.FC<ReportsProps> = ({ state }) => {
            </div>
         </div>
       </div>
+
+      {/* Selected Date Details (Drill Down) */}
+      {selectedDate && (
+        <div id="details-section" className="bg-gray-50 dark:bg-dark-800/50 p-6 rounded-3xl border border-gray-200 dark:border-gray-700 animate-fade-in mt-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Calendar className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+              <h2 className="text-xl font-bold text-gray-800 dark:text-white">Detalhes de {selectedDate}</h2>
+            </div>
+            <button 
+              onClick={() => setSelectedDate(null)}
+              className="text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white underline"
+            >
+              Fechar Detalhes
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {selectedDayDetails.map(session => (
+              <div key={session.id} className="bg-white dark:bg-dark-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between">
+                <div>
+                   <div className="flex justify-between items-start mb-2">
+                     <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide ${
+                        session.type === 'normal' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20' : 
+                        session.type === 'extra' ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/20' : 
+                        'bg-orange-50 text-orange-600 dark:bg-orange-900/20'
+                     }`}>
+                       {session.type}
+                     </span>
+                     <span className="text-xs text-gray-400 font-mono">
+                        {new Date(session.startTime).toLocaleTimeString().slice(0,5)} - {new Date(session.endTime!).toLocaleTimeString().slice(0,5)}
+                     </span>
+                   </div>
+                   <h4 className="font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">{session.description}</h4>
+                </div>
+                <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-50 dark:border-gray-700">
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                     <Clock size={12} />
+                     {((new Date(session.endTime!).getTime() - new Date(session.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2)}h
+                  </span>
+                  <span className="font-bold text-green-600 dark:text-green-400 flex items-center gap-1">
+                     <DollarSign size={14} />
+                     {calculateSessionEarnings(session, state.settings).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {selectedDayDetails.length === 0 && (
+               <p className="text-gray-500 col-span-full text-center py-4">Nenhum detalhe encontrado para esta data.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
